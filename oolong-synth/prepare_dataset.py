@@ -482,7 +482,11 @@ def build_context_prompt(
         "SYSTEM INSTRUCTIONS:",
         (
             "You are reviewing user questions over a set of examples for coarse-grained topic classification. "
-            "The set of possible coarse labels are: " + ", ".join(label_catalog) + "."
+            "The set of possible coarse labels are: " + ", ".join(label_catalog) + ". "
+            "IMPORTANT: The instances below are NOT pre-labeled. You must semantically understand each instance "
+            "to determine which coarse label it belongs to. For example, 'What ocean borders France?' should be "
+            "classified as LOC (location), 'Who invented the telephone?' as HUM (human), etc. "
+            "Use the llm_query tool to batch-classify instances semantically before answering counting or filtering questions."
         ),
         f"There are {len(instances)} examples in the context.",
         "Answer the question that follows.",
@@ -493,7 +497,7 @@ def build_context_prompt(
     entry_lines = []
     for idx, instance in enumerate(instances, start=1):
         entry_lines.append(
-            f"Example {idx:04d} | Date: {instance['date']} | User: {instance['user_id']} | Label: {instance['label_coarse_original']} | Question: {instance['text']}"
+            f"Date: {instance['date']} || User: {instance['user_id']} || Instance: {instance['text']}"
         )
 
     footer_lines = [
