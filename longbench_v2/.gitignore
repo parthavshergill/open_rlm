@@ -1,0 +1,22 @@
+# Dataset files
+datasets/
+*.json
+
+# Results
+results/
+*.csv
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+.venv/
+
+# OS files
+.DS_Store
+Thumbs.db
+
