@@ -16,15 +16,15 @@ Usage:
     # Specific context length
     python run_rlm_on_trec.py --mode single --context-length 32768
     
-    # Different OpenAI model
-    python run_rlm_on_trec.py --mode single --model gpt-4o-mini
+    # Different OpenAI model (default is gpt-5-mini-2025-08-07)
+    python run_rlm_on_trec.py --mode single --model gpt-4o
     
     # Use Gemini models
     python run_rlm_on_trec.py --mode single --model gemini-1.5-pro
     python run_rlm_on_trec.py --mode single --model gemini-1.5-flash
     
     # Mix models (Gemini for main, GPT for recursive)
-    python run_rlm_on_trec.py --mode single --model gemini-1.5-pro --recursive-model gpt-4o-mini
+    python run_rlm_on_trec.py --mode single --model gemini-1.5-pro --recursive-model gpt-5-mini-2025-08-07
     
     # Disable logging for cleaner output
     python run_rlm_on_trec.py --mode single --no-logging
@@ -164,34 +164,34 @@ def run_single_mode(args):
     # Load dataset
     dataset = load_trec_dataset(args.dataset_path)
     
-    # Find examples with augmented context
-    examples_with_context = [
-        ex for ex in dataset['augmented_examples'] 
-        if 'augmented_context' in ex and ex['augmented_context']
-    ]
+    # Get contexts from dataset
+    contexts = dataset.get('contexts', [])
     
-    if not examples_with_context:
-        print("No examples with augmented context found!")
+    if not contexts:
+        print("No contexts found in dataset!")
+        print("Make sure you ran the prepare_dataset.py script to generate contexts.")
         return None
     
     # Filter by context length if specified
     if args.context_length:
-        filtered = [ex for ex in examples_with_context if ex.get('context_length') == args.context_length]
+        filtered = [ctx for ctx in contexts if ctx.get('target_tokens') == args.context_length]
         if filtered:
-            examples_with_context = filtered
+            contexts = filtered
+            print(f"Filtered to target token length: {args.context_length}")
         else:
-            print(f"No examples with context length {args.context_length}, using all examples")
+            print(f"No contexts with target length {args.context_length}, using all contexts")
     
-    # Select random example
-    example = random.choice(examples_with_context)
+    # Select random context
+    context = random.choice(contexts)
     
-    context_list = example.get('augmented_context', [])
-    context_string = format_dataset_as_string(context_list)
-    question = example.get('final_question', 'What is the answer?')
+    # Use the pre-formatted prompt as context string
+    context_string = context.get('prompt', '')
+    question = context.get('final_question', 'What is the answer?')
     
-    print(f"\nDataset: {len(dataset['augmented_examples'])} total examples")
-    print(f"Examples with context: {len(examples_with_context)}")
-    print(f"Selected example context: {len(context_list)} items")
+    print(f"\nDataset: {len(dataset.get('augmented_examples', []))} augmented examples")
+    print(f"Available contexts: {len(dataset.get('contexts', []))}")
+    print(f"Selected context target tokens: {context.get('target_tokens', 'N/A')}")
+    print(f"Actual example count in context: {context.get('actual_example_count', 'N/A')}")
     print(f"Context string length: {len(context_string)} characters")
     print(f"Question: {question}")
     
@@ -212,43 +212,42 @@ def run_batch_mode(args):
     # Load dataset
     dataset = load_trec_dataset(args.dataset_path)
     
-    # Find examples with augmented context
-    examples_with_context = [
-        ex for ex in dataset['augmented_examples'] 
-        if 'augmented_context' in ex and ex['augmented_context']
-    ]
+    # Get contexts from dataset
+    contexts = dataset.get('contexts', [])
     
-    if not examples_with_context:
-        print("No examples with augmented context found!")
+    if not contexts:
+        print("No contexts found in dataset!")
+        print("Make sure you ran the prepare_dataset.py script to generate contexts.")
         return None
     
     # Filter by context length if specified
     if args.context_length:
-        filtered = [ex for ex in examples_with_context if ex.get('context_length') == args.context_length]
+        filtered = [ctx for ctx in contexts if ctx.get('target_tokens') == args.context_length]
         if filtered:
-            examples_with_context = filtered
-            print(f"Filtered to context length: {args.context_length}")
+            contexts = filtered
+            print(f"Filtered to target token length: {args.context_length}")
         else:
-            print(f"No examples with context length {args.context_length}, using all examples")
+            print(f"No contexts with target length {args.context_length}, using all contexts")
     
-    # Select random examples
-    num_to_test = min(args.num_examples, len(examples_with_context))
-    selected_examples = random.sample(examples_with_context, num_to_test)
+    # Select random contexts
+    num_to_test = min(args.num_examples, len(contexts))
+    selected_contexts = random.sample(contexts, num_to_test)
     
-    print(f"\nTesting {num_to_test} examples")
+    print(f"\nTesting {num_to_test} contexts")
     
     results = []
-    for i, example in enumerate(selected_examples, 1):
+    for i, context in enumerate(selected_contexts, 1):
         print(f"\n{'#'*80}")
-        print(f"# Example {i}/{num_to_test}")
+        print(f"# Context {i}/{num_to_test}")
         print(f"{'#'*80}")
         
-        context_list = example.get('augmented_context', [])
-        context_string = format_dataset_as_string(context_list)
-        question = example.get('final_question', 'What is the answer?')
+        # Use the pre-formatted prompt as context string
+        context_string = context.get('prompt', '')
+        question = context.get('final_question', 'What is the answer?')
         
         print(f"Question: {question}")
-        print(f"Context size: {len(context_list)} items")
+        print(f"Target tokens: {context.get('target_tokens', 'N/A')}")
+        print(f"Example count: {context.get('actual_example_count', 'N/A')}")
         print(f"Context string length: {len(context_string)} characters")
         
         try:
@@ -309,8 +308,8 @@ Examples:
   # Single real example with logging
   python run_rlm_on_trec.py --mode single
   
-  # Test 5 examples with cheaper OpenAI model
-  python run_rlm_on_trec.py --mode batch --num-examples 5 --model gpt-4o-mini
+  # Test 5 examples (uses default gpt-5-mini-2025-08-07)
+  python run_rlm_on_trec.py --mode batch --num-examples 5
   
   # Use Google Gemini models
   python run_rlm_on_trec.py --mode single --model gemini-1.5-pro
@@ -339,14 +338,14 @@ Examples:
     # Dataset configuration
     parser.add_argument(
         '--dataset-path',
-        default='/Users/parthavshergill/open_rlm/outputs/trec_qc_coarse_prepared.json',
+        default='/Users/parthavshergill/open_rlm/outputs/trec_qc_coarse_improved.json',
         help='Path to TREC dataset JSON file'
     )
     
     parser.add_argument(
         '--context-length',
         type=int,
-        help='Filter examples by context length (e.g., 1024, 8192, 32768, 131072)'
+        help='Filter contexts by target token length (e.g., 1024, 8192, 32768, 131072, 262144)'
     )
     
     # Batch mode options
@@ -360,8 +359,8 @@ Examples:
     # RLM configuration
     parser.add_argument(
         '--model',
-        default='gpt-4',
-        help='Main model to use. Supports OpenAI (gpt-4, gpt-4o, gpt-4o-mini) and Gemini (gemini-1.5-pro, gemini-1.5-flash, gemini-2.0-flash-exp) (default: gpt-4)'
+        default='gpt-5-mini-2025-08-07',
+        help='Main model to use. Supports OpenAI (gpt-5-mini-2025-08-07, gpt-4, gpt-4o, gpt-4o-mini) and Gemini (gemini-1.5-pro, gemini-1.5-flash, gemini-2.0-flash-exp) (default: gpt-5-mini-2025-08-07)'
     )
     
     parser.add_argument(
