@@ -424,53 +424,137 @@ def generate_questions(
     total_questions: int,
     seed: int,
 ) -> List[str]:
+    """
+    Generate improved questions that test RLM's recursive capabilities.
+    
+    Question types:
+    1. Subset filtering + classification counting (matches real TREC benchmark)
+    2. Multi-condition aggregations
+    3. Temporal + semantic reasoning
+    4. User-based comparisons
+    5. Complex top-k queries
+    6. Cross-temporal percentages
+    """
     rng = random.Random(seed)
     labels = sorted({item["label_coarse_original"] for item in instances})
-    user_counts = Counter(item["user_id"] for item in instances)
     if len(labels) == 0:
         return []
-
-    def random_date_threshold() -> str:
-        if not instances:
-            return "01/01/2023"
-        parsed_dates = [datetime.strptime(item["date"], "%m/%d/%Y") for item in instances]
-        earliest = min(parsed_dates)
-        latest = max(parsed_dates)
-        span_days = (latest - earliest).days or 1
-        offset = rng.randint(0, span_days)
-        threshold = earliest + timedelta(days=offset)
-        return threshold.strftime("%m/%d/%Y")
-
-    questions: List[str] = []
-    generators = ["counting", "user", "timeline"]
-
+    
+    # Extract metadata from instances
+    all_users = list(set(inst['user_id'] for inst in instances))
+    all_dates = [datetime.strptime(inst['date'], "%m/%d/%Y") for inst in instances]
+    date_range = (min(all_dates), max(all_dates))
+    
+    questions = []
+    
+    # Define question generators with weights (to control distribution)
+    generators = [
+        ('subset_classification', 0.25),  # Most important - matches real TREC
+        ('multi_condition', 0.20),
+        ('temporal_semantic', 0.20),
+        ('user_comparison', 0.15),
+        ('top_k', 0.10),
+        ('cross_temporal', 0.10),
+    ]
+    
     while len(questions) < total_questions:
-        choice = rng.choice(generators)
-        if choice == "counting":
+        # Weighted random selection
+        choice = rng.choices(
+            [g[0] for g in generators],
+            weights=[g[1] for g in generators],
+            k=1
+        )[0]
+        
+        if choice == 'subset_classification':
+            # "For users X, Y, Z, how many instances should be classified as label L?"
+            num_users = rng.choice([5, 10, 15, 20])
+            user_subset = rng.sample(all_users, min(num_users, len(all_users)))
             target_label = rng.choice(labels)
-            variant = rng.random()
-            if variant < 0.5:
-                questions.append(
-                    f"COUNTING: Which coarse label appears most often in the context?"
-                )
-            else:
-                questions.append(
-                    f"COUNTING: How many entries correspond to the coarse label '{target_label}'?"
-                )
-        elif choice == "user":
-            if user_counts:
-                questions.append("USER: Which user ID occurs most frequently in the context?")
-            else:
-                questions.append("USER: Identify the user ID that appears the most.")
-        else:
-            threshold = random_date_threshold()
-            focus_label = rng.choice(labels)
+            
+            # Format like real TREC benchmark
+            user_list = ", ".join(user_subset)
             questions.append(
-                "TIMELINE: Compare how often the coarse label "
-                f"'{focus_label}' appears before {threshold} versus on/after that date."
+                f"For the following question, only consider the subset of instances that are associated with user IDs {user_list}. "
+                f"Among instances associated with these users, how many data points should be classified as label '{target_label}'? "
+                f"Give your final answer in the form 'Answer: number'."
             )
-
-    return questions
+        
+        elif choice == 'multi_condition':
+            # "Among users from set X after date D, which label appears most?"
+            num_users = rng.choice([3, 5, 8])
+            user_subset = rng.sample(all_users, min(num_users, len(all_users)))
+            
+            # Random date within middle 60% of range
+            date_span = (date_range[1] - date_range[0]).days
+            offset_days = int(date_span * rng.uniform(0.2, 0.8))
+            threshold_date = date_range[0] + timedelta(days=offset_days)
+            threshold_str = threshold_date.strftime("%m/%d/%Y")
+            
+            user_list = ", ".join(user_subset)
+            questions.append(
+                f"Consider only instances from users {user_list} that occur on or after {threshold_str}. "
+                f"Among these filtered instances, which coarse label appears most frequently? "
+                f"Give your final answer in the form 'Answer: LABEL'."
+            )
+        
+        elif choice == 'temporal_semantic':
+            # "How many instances classified as L appeared in Q1 2023 vs Q2 2023?"
+            target_label = rng.choice(labels)
+            
+            # Pick two time periods
+            quarters = [
+                ("Q1 2022", "01/01/2022", "03/31/2022"),
+                ("Q2 2022", "04/01/2022", "06/30/2022"),
+                ("Q3 2022", "07/01/2022", "09/30/2022"),
+                ("Q4 2022", "10/01/2022", "12/31/2022"),
+                ("Q1 2023", "01/01/2023", "03/31/2023"),
+                ("Q2 2023", "04/01/2023", "06/30/2023"),
+                ("Q3 2023", "07/01/2023", "09/30/2023"),
+                ("Q4 2023", "10/01/2023", "12/31/2023"),
+                ("Q1 2024", "01/01/2024", "03/31/2024"),
+                ("Q2 2024", "04/01/2024", "06/30/2024"),
+            ]
+            
+            q1, q2 = rng.sample(quarters, 2)
+            questions.append(
+                f"Compare instances that should be classified as '{target_label}'. "
+                f"How many appear in {q1[0]} (between {q1[1]} and {q1[2]}) versus {q2[0]} (between {q2[1]} and {q2[2]})? "
+                f"Give your final answer in the form 'Answer: X in {q1[0]}, Y in {q2[0]}'."
+            )
+        
+        elif choice == 'user_comparison':
+            # "Which user has more instances classified as L1 vs L2?"
+            label1, label2 = rng.sample(labels, 2)
+            questions.append(
+                f"Compare the distribution of labels '{label1}' and '{label2}' across all users. "
+                f"Which user ID has the largest difference in count between these two labels? "
+                f"Give your final answer in the form 'Answer: USER_ID with difference N'."
+            )
+        
+        elif choice == 'top_k':
+            # "List top K users by number of instances classified as L"
+            k = rng.choice([3, 5])
+            target_label = rng.choice(labels)
+            questions.append(
+                f"Identify the top {k} users by number of instances that should be classified as '{target_label}'. "
+                f"Give your final answer in the form 'Answer: USER1 (count1), USER2 (count2), USER3 (count3)'."
+            )
+        
+        elif choice == 'cross_temporal':
+            # "What percentage of label L instances occurred before date D?"
+            target_label = rng.choice(labels)
+            
+            date_span = (date_range[1] - date_range[0]).days
+            offset_days = int(date_span * rng.uniform(0.3, 0.7))
+            threshold_date = date_range[0] + timedelta(days=offset_days)
+            threshold_str = threshold_date.strftime("%m/%d/%Y")
+            
+            questions.append(
+                f"What percentage of instances that should be classified as '{target_label}' "
+                f"occurred before {threshold_str}? Give your final answer in the form 'Answer: X%'."
+            )
+    
+    return questions[:total_questions]
 
 
 def build_context_prompt(
