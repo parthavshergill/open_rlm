@@ -148,16 +148,30 @@ def run_single_example(item: Dict[str, Any], args) -> Dict[str, Any]:
         Result dictionary with prediction and correctness
     """
     # Extract data
-    context = item.get('context', '')
+    raw_context = item.get('context', '')
     question = format_question(item)
     correct_answer = item.get('answer', '')
+    
+    # Structure context with metadata for REPL environment
+    # This makes it clear to the model that documents are in REPL, not in the prompt
+    structured_context = {
+        'document': raw_context,
+        'metadata': {
+            'id': item.get('_id'),
+            'domain': item.get('domain'),
+            'sub_domain': item.get('sub_domain'),
+            'difficulty': item.get('difficulty'),
+            'length': item.get('length'),
+            'document_length_chars': len(raw_context)
+        }
+    }
     
     print(f"\n{'='*80}")
     print(f"ID: {item.get('_id')}")
     print(f"Domain: {item.get('domain')} / {item.get('sub_domain')}")
     print(f"Difficulty: {item.get('difficulty')}")
     print(f"Length: {item.get('length')}")
-    print(f"Context length: {len(context)} characters")
+    print(f"Context length: {len(raw_context)} characters")
     print(f"Correct answer: {correct_answer}")
     print(f"{'='*80}")
     
@@ -167,7 +181,7 @@ def run_single_example(item: Dict[str, Any], args) -> Dict[str, Any]:
     if args.show_context:
         preview_len = 1000
         print(f"\nContext preview (first {preview_len} characters):")
-        print(context[:preview_len])
+        print(raw_context[:preview_len])
         print("...\n")
     
     # Initialize RLM
@@ -186,10 +200,13 @@ def run_single_example(item: Dict[str, Any], args) -> Dict[str, Any]:
         max_iterations=args.max_iterations
     )
     
-    # Run RLM
+    # Run RLM with structured context
+    # The document is NOT included in the prompt - only loaded into REPL environment
     print("Running RLM...\n")
+    print("NOTE: Document is loaded into REPL environment as context['document']")
+    print("      Metadata is available at context['metadata']\n")
     try:
-        response = rlm.completion(context=context, query=question)
+        response = rlm.completion(context=structured_context, query=question)
         
         # Evaluate
         is_correct = evaluate_response(response, correct_answer)
@@ -210,7 +227,7 @@ def run_single_example(item: Dict[str, Any], args) -> Dict[str, Any]:
             'difficulty': item.get('difficulty'),
             'length': item.get('length'),
             'question': item.get('question'),
-            'context_length': len(context),
+            'context_length': len(raw_context),
             'correct_answer': correct_answer,
             'model_response': response,
             'extracted_answer': extracted_answer,
