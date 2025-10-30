@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class OpenAIClient:
-    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-5"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-5-mini-2025-08-07"):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
             raise ValueError("OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass api_key parameter.")
@@ -42,3 +42,25 @@ class OpenAIClient:
 
         except Exception as e:
             raise RuntimeError(f"Error generating completion: {str(e)}")
+
+
+def get_llm_client(model: str, api_key: Optional[str] = None):
+    """
+    Factory function to get the appropriate LLM client based on model name.
+    
+    Args:
+        model: Model identifier (e.g., 'gpt-4', 'gemini-1.5-pro')
+        api_key: Optional API key (will use env vars if not provided)
+    
+    Returns:
+        LLM client instance (OpenAIClient or GeminiClient)
+    """
+    model_lower = model.lower()
+    
+    # Determine which client to use based on model name
+    if 'gemini' in model_lower:
+        from rlm.utils.gemini_client import GeminiClient
+        return GeminiClient(api_key=api_key, model=model)
+    else:
+        # Default to OpenAI for gpt-* and other models
+        return OpenAIClient(api_key=api_key, model=model)

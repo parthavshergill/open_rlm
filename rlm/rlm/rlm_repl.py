@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Any
 
 from rlm import RLM
 from rlm.repl import REPLEnv
-from rlm.utils.llm import OpenAIClient
+from rlm.utils.llm import get_llm_client
 from rlm.utils.prompts import DEFAULT_QUERY, next_action_prompt, build_system_prompt
 import rlm.utils.utils as utils
 
@@ -21,8 +21,8 @@ class RLM_REPL(RLM):
     
     def __init__(self, 
                  api_key: Optional[str] = None, 
-                 model: str = "gpt-5",
-                 recursive_model: str = "gpt-5",
+                 model: str = "gpt-5-mini-2025-08-07",
+                 recursive_model: str = "gpt-5-mini-2025-08-07",
                  max_iterations: int = 20,
                  depth: int = 0,
                  enable_logging: bool = False,
@@ -30,7 +30,7 @@ class RLM_REPL(RLM):
         self.api_key = api_key
         self.model = model
         self.recursive_model = recursive_model
-        self.llm = OpenAIClient(api_key, model) # Replace with other client
+        self.llm = get_llm_client(model, api_key) # Automatically select client based on model
         
         # Track recursive call depth to prevent infinite loops
         self.repl_env = None

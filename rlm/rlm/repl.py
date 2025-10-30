@@ -15,7 +15,7 @@ from rlm import RLM
 class Sub_RLM(RLM):
     """Recursive LLM client for REPL environment with fixed configuration."""
     
-    def __init__(self, model: str = "gpt-5"):
+    def __init__(self, model: str = "gpt-5-mini-2025-08-07"):
         # Configuration - model can be specified
         self.api_key = os.getenv("OPENAI_API_KEY")
         if not self.api_key:
@@ -71,7 +71,7 @@ class REPLResult:
 class REPLEnv:
     def __init__(
         self,
-        recursive_model: str = "gpt-5-mini",
+        recursive_model: str = "gpt-5-mini-2025-08-07",
         context_json: Optional[dict | list] = None,
         context_str: Optional[str] = None,
         setup_code: str = None,
