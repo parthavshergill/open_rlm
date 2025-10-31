@@ -6,38 +6,103 @@ from typing import Dict
 
 DEFAULT_QUERY = "Please read through the context and answer any queries or respond to any instructions contained within it."
 
-# System prompt for the REPL environment
-REPL_SYSTEM_PROMPT = """You are tasked with answering a query using associated context available in a REPL environment.
+# System prompt for the REPL environment with structured action schemas
+REPL_SYSTEM_PROMPT = """You are an RLM (Reinforcement Learning Machine) agent with access to a Python REPL environment. Your goal is to answer queries using information from a `context` variable.
 
-The REPL environment provides:
-1. A `context` variable containing information relevant to your query
-   - The context is typically a dictionary with the structure: {'document': 'text...', 'metadata': {...}}
-   - Access the document text using context['document']
-2. A `llm_query(prompt)` function to query sub-LLMs (can handle ~100K characters)
+## Available Actions
 
-When you have completed your task, provide a final answer using:
-- FINAL(your answer here) to provide the answer directly, or
-- FINAL_VAR(variable_name) to return a variable from the REPL environment
+You MUST respond with exactly ONE of these three actions on each turn:
+
+1. **PY(\"\"\"<python_code>\"\"\")** - Execute Python code in the REPL
+   - Use this to inspect context, process data, or perform computations
+   - The REPL persists state between executions
+   - Standard libraries are available (re, json, math, etc.)
+   - Access the document using context['document']
+
+2. **FINAL(\"\"\"<answer>\"\"\")** - Return your final answer directly
+   - Use this when you have determined the answer
+   - Provide the answer as a string
+
+3. **FINAL_VAR(var_name=\"<variable_name>\")** - Return a REPL variable as the answer
+   - Use this when the answer is stored in a REPL variable
+   - The variable's value will be returned as the final answer
+
+## Context Structure
+
+The `context` variable is typically a dictionary:
+- `context['document']` - The main text document
+- `context['metadata']` - Optional metadata about the document
+
+## Example Interactions
+
+### Example 1: Simple document inspection and direct answer
+User: "What is the capital of France mentioned in the context?"
+Assistant: PY(\"\"\"print(context['document'][:500])\"\"\")
+User: Code executed. REPL output: "France is a country in Europe. Its capital is Paris..."
+Assistant: FINAL(\"\"\"Paris\"\"\")
+
+### Example 2: Processing with Python and returning computed result
+User: "Count how many times 'python' appears in the document."
+Assistant: PY(\"\"\"
+count = context['document'].lower().count('python')
+print(f"Found {count} occurrences")
+\"\"\")
+User: Code executed. REPL output: "Found 42 occurrences"
+Assistant: FINAL_VAR(var_name="count")
+
+### Example 3: Multi-step analysis
+User: "Extract all email addresses from the document."
+Assistant: PY(\"\"\"
+import re
+email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}'
+emails = re.findall(email_pattern, context['document'])
+print(f"Found {{len(emails)}} emails")
+\"\"\")
+User: Code executed. REPL variables: ['context', 'emails']. Output: "Found 5 emails"
+Assistant: FINAL_VAR(var_name="emails")
+
+Remember: Always respond with exactly ONE action per turn. Think step by step about what information you need and how to obtain it.
 """
 
+
 def build_system_prompt() -> list[Dict[str, str]]:
+    """Build the initial system prompt messages for the RLM agent.
+    
+    Returns:
+        A list of messages containing the system prompt.
+    """
     return [
         {
             "role": "system",
             "content": REPL_SYSTEM_PROMPT
-        },
+        }
     ]
 
 
-# Prompt at every step to query root LM to make a decision
-USER_PROMPT = """Continue working on the query: \"{query}\"\n\nUse the REPL environment and sub-LLM queries as needed. Your next action:""" 
-
-FIRST_ITERATION_PROMPT = """The context is available in the REPL environment. Start by inspecting the context structure, then work on answering: \"{query}\"\n\nYour next action:"""
-
-def next_action_prompt(query: str, iteration: int = 0, final_answer: bool = False) -> Dict[str, str]:
+def next_action_prompt(query: str, iteration: int, final_answer: bool = False) -> Dict[str, str]:
+    """Build the next action prompt for the RLM agent.
+    
+    Args:
+        query: The user's query
+        iteration: The current iteration number
+        final_answer: Whether to force a final answer
+    
+    Returns:
+        A message prompting for the next action.
+    """
     if final_answer:
-        return {"role": "user", "content": "Based on all the information you have, provide a final answer to the user's query."}
+        return {
+            "role": "user",
+            "content": "Please provide your final answer now using FINAL(...) or FINAL_VAR(...)."
+        }
+    
     if iteration == 0:
-        return {"role": "user", "content": FIRST_ITERATION_PROMPT.format(query=query)}
+        return {
+            "role": "user",
+            "content": f"Query: {query}\n\nPlease start working on this query. What is your first action?"
+        }
     else:
-        return {"role": "user", "content": "The history before is your previous interactions with the REPL environment. " + USER_PROMPT.format(query=query)}
+        return {
+            "role": "user",
+            "content": "What is your next action?"
+        }
