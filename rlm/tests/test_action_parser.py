@@ -1,299 +1,291 @@
-"""Unit tests for action schema parser."""
+"""
+Unit tests for action_schemas module.
+
+Tests all three action types and edge cases for the parser.
+"""
 
 import pytest
 from rlm.action_schemas import (
+    Action,
     PyAction,
-    CallSubmodelAction,
     FinalAction,
     FinalVarAction,
     parse_action,
+    format_action,
 )
 
 
 class TestPyAction:
-    """Tests for parsing PY("""...""") actions."""
+    """Tests for PY(...) action parsing."""
     
     def test_simple_py_action(self):
         """Test parsing a simple Python action."""
-        text = 'PY("""print("hello")""")'
+        text = 'PY("""x = 1 + 1""")'
         action = parse_action(text)
         assert isinstance(action, PyAction)
-        assert action.code == 'print("hello")'
+        assert action.code == "x = 1 + 1"
     
-    def test_multiline_py_action(self):
-        """Test parsing a multiline Python action."""
+    def test_py_action_with_newlines(self):
+        """Test parsing Python action with multiple lines."""
         text = '''PY("""
 import re
-matches = re.findall(r"pattern", text)
-print(matches)
+x = context['document']
+print(x[:100])
 """)'''
         action = parse_action(text)
         assert isinstance(action, PyAction)
         assert "import re" in action.code
-        assert "re.findall" in action.code
+        assert "context['document']" in action.code
+        assert "print(x[:100])" in action.code
     
-    def test_py_action_with_triple_quotes_in_code(self):
-        """Test parsing Python action containing triple quotes."""
-        text = 'PY("""x = "test string"""")'
+    def test_py_action_with_nested_quotes(self):
+        """Test parsing Python action with nested single quotes."""
+        text = '''PY("""print(context['document'])""")'''
         action = parse_action(text)
         assert isinstance(action, PyAction)
-        assert action.code == 'x = "test string"'
+        assert action.code == "print(context['document'])"
     
-    def test_py_action_with_context(self):
-        """Test parsing Python action accessing context variable."""
-        text = 'PY("""print(context[:500])""")'
+    def test_py_action_with_special_chars(self):
+        """Test parsing Python action with special characters."""
+        text = r'''PY("""text = "Hello\nWorld\t!"
+pattern = r"\d+"
+matches = re.findall(pattern, text)""")'''
         action = parse_action(text)
         assert isinstance(action, PyAction)
-        assert action.code == 'print(context[:500])'
+        assert "Hello\\nWorld\\t!" in action.code
+        assert r"\d+" in action.code
     
-    def test_py_action_in_longer_text(self):
-        """Test extracting PY action from surrounding text."""
-        text = 'I will now execute some code: PY("""x = 42""") and continue'
+    def test_py_action_in_context(self):
+        """Test parsing PY action when surrounded by other text."""
+        text = "Let me inspect the context first. PY(\"\"\"print(len(context))\"\"\")"
         action = parse_action(text)
         assert isinstance(action, PyAction)
-        assert action.code == 'x = 42'
-
-
-class TestCallSubmodelAction:
-    """Tests for parsing CALL_SUBMODEL(...) actions."""
-    
-    def test_simple_call_submodel(self):
-        """Test parsing a simple submodel call."""
-        text = 'CALL_SUBMODEL(query="What is X?", context_var="doc")'
-        action = parse_action(text)
-        assert isinstance(action, CallSubmodelAction)
-        assert action.query == "What is X?"
-        assert action.context_var == "doc"
-    
-    def test_call_submodel_with_triple_quotes(self):
-        """Test parsing submodel call with triple-quoted query."""
-        text = 'CALL_SUBMODEL(query="""What is the answer to life, universe, and everything?""", context_var="context")'
-        action = parse_action(text)
-        assert isinstance(action, CallSubmodelAction)
-        assert action.query == "What is the answer to life, universe, and everything?"
-        assert action.context_var == "context"
-    
-    def test_call_submodel_multiline_query(self):
-        """Test parsing submodel call with multiline query."""
-        text = '''CALL_SUBMODEL(query="""Based on the following context:
-{context}
-
-Answer the question: What happened?""", context_var="context")'''
-        action = parse_action(text)
-        assert isinstance(action, CallSubmodelAction)
-        assert "Based on the following context" in action.query
-        assert "What happened?" in action.query
-        assert action.context_var == "context"
-    
-    def test_call_submodel_no_spaces(self):
-        """Test parsing submodel call without spaces after comma."""
-        text = 'CALL_SUBMODEL(query="test",context_var="var")'
-        action = parse_action(text)
-        assert isinstance(action, CallSubmodelAction)
-        assert action.query == "test"
-        assert action.context_var == "var"
-    
-    def test_call_submodel_extra_spaces(self):
-        """Test parsing submodel call with extra spaces."""
-        text = 'CALL_SUBMODEL(query="test",   context_var="var")'
-        action = parse_action(text)
-        assert isinstance(action, CallSubmodelAction)
-        assert action.query == "test"
-        assert action.context_var == "var"
+        assert action.code == "print(len(context))"
 
 
 class TestFinalAction:
-    """Tests for parsing FINAL("""...""") actions."""
+    """Tests for FINAL(...) action parsing."""
     
     def test_simple_final_action(self):
-        """Test parsing a simple final answer."""
-        text = 'FINAL("""42""")'
+        """Test parsing a simple FINAL action."""
+        text = 'FINAL("""The answer is 42""")'
         action = parse_action(text)
         assert isinstance(action, FinalAction)
-        assert action.answer == "42"
-    
-    def test_final_action_long_answer(self):
-        """Test parsing final action with longer answer."""
-        text = 'FINAL("""The answer is that the protagonist decided to leave the city and start a new life.""")'
-        action = parse_action(text)
-        assert isinstance(action, FinalAction)
-        assert "protagonist decided to leave" in action.answer
+        assert action.answer == "The answer is 42"
     
     def test_final_action_multiline(self):
-        """Test parsing multiline final answer."""
-        text = '''FINAL("""The main points are:
-1. First point
-2. Second point
-3. Third point""")'''
+        """Test parsing FINAL action with multiline answer."""
+        text = '''FINAL("""The capital of France is Paris.
+It is located in the northern part of the country.""")'''
         action = parse_action(text)
         assert isinstance(action, FinalAction)
-        assert "First point" in action.answer
-        assert "Second point" in action.answer
+        assert "Paris" in action.answer
+        assert "northern part" in action.answer
     
     def test_final_action_with_quotes(self):
-        """Test parsing final answer containing quotes."""
-        text = 'FINAL("""The character said "hello world" and left.""")'
+        """Test parsing FINAL action containing single quotes."""
+        text = '''FINAL("""The author's main point is clear.""")'''
         action = parse_action(text)
         assert isinstance(action, FinalAction)
-        assert 'said "hello world"' in action.answer
+        assert action.answer == "The author's main point is clear."
+    
+    def test_final_action_empty(self):
+        """Test parsing FINAL action with empty answer."""
+        text = 'FINAL("""""")'
+        action = parse_action(text)
+        assert isinstance(action, FinalAction)
+        assert action.answer == ""
     
     def test_final_action_in_context(self):
-        """Test extracting FINAL action from surrounding text."""
-        text = 'After analyzing everything, my answer is: FINAL("""Yes, it is correct.""")'
+        """Test parsing FINAL action surrounded by explanatory text."""
+        text = 'Based on my analysis, FINAL("""Paris""")'
         action = parse_action(text)
         assert isinstance(action, FinalAction)
-        assert action.answer == "Yes, it is correct."
+        assert action.answer == "Paris"
 
 
 class TestFinalVarAction:
-    """Tests for parsing FINAL_VAR(var_name="...") actions."""
+    """Tests for FINAL_VAR(...) action parsing."""
     
-    def test_simple_final_var(self):
-        """Test parsing a simple final var action."""
+    def test_final_var_with_double_quotes(self):
+        """Test parsing FINAL_VAR with double quotes."""
         text = 'FINAL_VAR(var_name="result")'
         action = parse_action(text)
         assert isinstance(action, FinalVarAction)
         assert action.var_name == "result"
     
-    def test_final_var_different_names(self):
-        """Test parsing final var with different variable names."""
-        for var_name in ["answer", "count", "output", "final_result"]:
-            text = f'FINAL_VAR(var_name="{var_name}")'
-            action = parse_action(text)
-            assert isinstance(action, FinalVarAction)
-            assert action.var_name == var_name
+    def test_final_var_with_single_quotes(self):
+        """Test parsing FINAL_VAR with single quotes."""
+        text = "FINAL_VAR(var_name='answer')"
+        action = parse_action(text)
+        assert isinstance(action, FinalVarAction)
+        assert action.var_name == "answer"
+    
+    def test_final_var_with_underscore(self):
+        """Test parsing FINAL_VAR with underscored variable name."""
+        text = 'FINAL_VAR(var_name="final_count")'
+        action = parse_action(text)
+        assert isinstance(action, FinalVarAction)
+        assert action.var_name == "final_count"
     
     def test_final_var_in_context(self):
-        """Test extracting FINAL_VAR action from surrounding text."""
-        text = 'I have stored the result in a variable: FINAL_VAR(var_name="count")'
+        """Test parsing FINAL_VAR surrounded by text."""
+        text = "The result is stored in the variable. FINAL_VAR(var_name=\"count\")"
         action = parse_action(text)
         assert isinstance(action, FinalVarAction)
         assert action.var_name == "count"
 
 
-class TestParseActionEdgeCases:
+class TestParserEdgeCases:
     """Tests for edge cases and error handling."""
     
-    def test_no_action(self):
-        """Test that None is returned when no action is found."""
-        text = "This is just regular text with no action."
-        action = parse_action(text)
-        assert action is None
+    def test_none_input(self):
+        """Test that None input returns None."""
+        assert parse_action(None) is None
     
     def test_empty_string(self):
-        """Test parsing empty string."""
-        action = parse_action("")
-        assert action is None
+        """Test that empty string returns None."""
+        assert parse_action("") is None
     
-    def test_incomplete_action(self):
-        """Test that incomplete actions return None."""
-        incomplete_actions = [
-            'PY("""',
-            'CALL_SUBMODEL(query="test"',
-            'FINAL(',
-            'FINAL_VAR(var_name=',
-        ]
-        for text in incomplete_actions:
-            action = parse_action(text)
-            assert action is None, f"Expected None for incomplete action: {text}"
+    def test_invalid_action(self):
+        """Test that invalid action format returns None."""
+        text = "INVALID_ACTION(something)"
+        assert parse_action(text) is None
     
-    def test_malformed_action(self):
-        """Test that malformed actions return None."""
-        malformed_actions = [
-            'PY("code")',  # Wrong quotes
-            'CALL_SUBMODEL(query="test")',  # Missing context_var
-            'FINAL("answer")',  # Wrong quotes
-            'FINAL_VAR("var")',  # Missing var_name=
-        ]
-        for text in malformed_actions:
-            action = parse_action(text)
-            # These might parse or not depending on regex, but shouldn't crash
-            assert action is None or isinstance(action, (PyAction, CallSubmodelAction, FinalAction, FinalVarAction))
+    def test_malformed_py(self):
+        """Test that malformed PY action returns None."""
+        text = 'PY("single quotes only")'
+        assert parse_action(text) is None
+    
+    def test_malformed_final(self):
+        """Test that malformed FINAL action returns None."""
+        text = 'FINAL("single quotes")'
+        assert parse_action(text) is None
+    
+    def test_malformed_final_var(self):
+        """Test that malformed FINAL_VAR returns None."""
+        text = 'FINAL_VAR(name="wrong_param")'
+        assert parse_action(text) is None
+    
+    def test_text_without_action(self):
+        """Test that regular text returns None."""
+        text = "This is just some regular text without any action."
+        assert parse_action(text) is None
+    
+    def test_unclosed_triple_quotes(self):
+        """Test that unclosed triple quotes returns None."""
+        text = 'PY("""incomplete'
+        assert parse_action(text) is None
     
     def test_multiple_actions_returns_first(self):
-        """Test that when multiple actions exist, the first one is returned."""
-        text = 'PY("""x = 1""") then FINAL("""done""")'
+        """Test that when multiple actions present, first match is returned."""
+        text = 'FINAL_VAR(var_name="x") and also PY("""y=1""")'
         action = parse_action(text)
-        # Should return the first action found (PY)
-        assert isinstance(action, PyAction)
-        assert action.code == "x = 1"
+        # FINAL_VAR is checked first in parse_action
+        assert isinstance(action, FinalVarAction)
+        assert action.var_name == "x"
 
 
-class TestActionPriority:
-    """Tests for action parsing priority when multiple patterns might match."""
+class TestFormatAction:
+    """Tests for format_action function."""
     
-    def test_py_before_final(self):
-        """Test that PY is matched before FINAL when both present."""
-        text = 'PY("""result""") and FINAL("""result""")'
-        action = parse_action(text)
-        assert isinstance(action, PyAction)
+    def test_format_py_action(self):
+        """Test formatting PyAction back to string."""
+        action = PyAction(code="x = 1 + 1")
+        formatted = format_action(action)
+        assert formatted == 'PY("""x = 1 + 1""")'
     
-    def test_final_var_before_final(self):
-        """Test that FINAL_VAR is matched before FINAL."""
-        # Note: Based on the regex order in parse_action, this tests the actual behavior
-        text = 'FINAL_VAR(var_name="x") FINAL("""x""")'
-        action = parse_action(text)
-        # The function checks in order: PY, CALL_SUBMODEL, FINAL_VAR, FINAL
-        # So PY would be first if present, then CALL_SUBMODEL, then FINAL_VAR
-        assert isinstance(action, (FinalVarAction, FinalAction))
+    def test_format_final_action(self):
+        """Test formatting FinalAction back to string."""
+        action = FinalAction(answer="The answer is 42")
+        formatted = format_action(action)
+        assert formatted == 'FINAL("""The answer is 42""")'
+    
+    def test_format_final_var_action(self):
+        """Test formatting FinalVarAction back to string."""
+        action = FinalVarAction(var_name="result")
+        formatted = format_action(action)
+        assert formatted == 'FINAL_VAR(var_name="result")'
+    
+    def test_format_roundtrip_py(self):
+        """Test that format -> parse roundtrip works for PY."""
+        original = PyAction(code="print('hello')")
+        formatted = format_action(original)
+        parsed = parse_action(formatted)
+        assert isinstance(parsed, PyAction)
+        assert parsed.code == original.code
+    
+    def test_format_roundtrip_final(self):
+        """Test that format -> parse roundtrip works for FINAL."""
+        original = FinalAction(answer="42")
+        formatted = format_action(original)
+        parsed = parse_action(formatted)
+        assert isinstance(parsed, FinalAction)
+        assert parsed.answer == original.answer
+    
+    def test_format_roundtrip_final_var(self):
+        """Test that format -> parse roundtrip works for FINAL_VAR."""
+        original = FinalVarAction(var_name="result")
+        formatted = format_action(original)
+        parsed = parse_action(formatted)
+        assert isinstance(parsed, FinalVarAction)
+        assert parsed.var_name == original.var_name
 
 
 class TestRealWorldExamples:
-    """Tests with realistic examples from actual RLM usage."""
+    """Tests with realistic model outputs."""
     
-    def test_context_inspection(self):
-        """Test typical context inspection pattern."""
-        text = '''First, let me inspect the context:
-PY("""
-doc = context["document"]
-print(f"Document length: {len(doc)}")
-print(f"First 500 chars: {doc[:500]}")
-""")'''
+    def test_model_output_with_explanation(self):
+        """Test parsing action from model output with explanation."""
+        text = """Let me first check what's in the context variable.
+        
+PY(\"\"\"
+print(type(context))
+print(list(context.keys()))
+\"\"\")
+
+This will help me understand the structure."""
         action = parse_action(text)
         assert isinstance(action, PyAction)
-        assert "context[" in action.code
-        assert "print" in action.code
+        assert "print(type(context))" in action.code
     
-    def test_grep_pattern(self):
-        """Test typical grep/search pattern."""
-        text = '''I'll search for the relevant information:
-PY("""
-import re
-pattern = r"temperature:\s*(\d+)"
-matches = re.findall(pattern, context["document"])
-print(f"Found {len(matches)} matches: {matches}")
-""")'''
-        action = parse_action(text)
-        assert isinstance(action, PyAction)
-        assert "import re" in action.code
-        assert "re.findall" in action.code
-    
-    def test_submodel_call_with_context(self):
-        """Test realistic submodel call."""
-        text = '''Now I'll query the submodel with the relevant context:
-CALL_SUBMODEL(query="""Based on the document, what was the final decision and why?""", context_var="context")'''
-        action = parse_action(text)
-        assert isinstance(action, CallSubmodelAction)
-        assert "final decision" in action.query
-        assert action.context_var == "context"
-    
-    def test_final_answer_after_reasoning(self):
-        """Test final answer after reasoning."""
-        text = '''Based on my analysis, I can now provide the final answer:
-FINAL("""The temperature increased by 15 degrees Celsius between 2020 and 2023.""")'''
+    def test_model_output_final_with_reasoning(self):
+        """Test parsing FINAL from output with reasoning."""
+        text = """Based on my analysis of the document, I can see that the capital 
+is mentioned in the third paragraph. The answer is:
+
+FINAL(\"\"\"Paris\"\"\")"""
         action = parse_action(text)
         assert isinstance(action, FinalAction)
-        assert "temperature increased" in action.answer
+        assert action.answer == "Paris"
     
-    def test_final_var_after_computation(self):
-        """Test final var after computation."""
-        text = '''I've computed the result and stored it:
-FINAL_VAR(var_name="total_count")'''
+    def test_model_output_with_markdown(self):
+        """Test parsing action when model uses markdown formatting."""
+        text = """I'll execute this code:
+
+```
+PY(\"\"\"count = len(context['items'])\"\"\")
+```"""
         action = parse_action(text)
-        assert isinstance(action, FinalVarAction)
-        assert action.var_name == "total_count"
+        assert isinstance(action, PyAction)
+        assert action.code == "count = len(context['items'])"
+    
+    def test_verbose_model_output(self):
+        """Test parsing from verbose model response."""
+        text = """Certainly! I'll count the occurrences for you. First, I'll 
+write some Python code to count the word in the document:
+
+PY(\"\"\"
+word = 'python'
+count = context['document'].lower().count(word)
+print(f"Found {count} occurrences of '{word}'")
+\"\"\")
+
+Let me know what happens!"""
+        action = parse_action(text)
+        assert isinstance(action, PyAction)
+        assert "count = context['document'].lower().count(word)" in action.code
 
 
 if __name__ == "__main__":
-    # Allow running tests directly
     pytest.main([__file__, "-v"])

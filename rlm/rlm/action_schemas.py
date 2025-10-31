@@ -1,10 +1,8 @@
-"""Action schemas for RLM agent structured outputs.
+"""
+Action schemas and parser for RLM agent.
 
-This module defines the four action types that the RLM agent can emit:
-1. PY("""...""") - Execute Python code in the REPL
-2. CALL_SUBMODEL(query="...", context_var="...") - Query a sub-model
-3. FINAL("""...""") - Return final answer directly
-4. FINAL_VAR(var_name="...") - Return value of a REPL variable
+This module defines the structured actions that the RLM agent can emit,
+and provides a strict parser to extract them from model responses.
 """
 
 from dataclasses import dataclass
@@ -14,90 +12,100 @@ import re
 
 @dataclass
 class PyAction:
-    """Execute Python code in the REPL environment."""
+    """Execute Python code in the REPL environment.
+    
+    Example: PY(\"\"\"print(context['document'][:100])\"\"\")
+    """
     code: str
 
 
 @dataclass
-class CallSubmodelAction:
-    """Call a sub-model with a query and context variable."""
-    query: str
-    context_var: str
-
-
-@dataclass
 class FinalAction:
-    """Return a final answer directly as a string."""
+    """Return a final answer directly as a string.
+    
+    Example: FINAL(\"\"\"The answer is 42\"\"\")
+    """
     answer: str
 
 
 @dataclass
 class FinalVarAction:
-    """Return the value of a REPL variable as the final answer."""
+    """Return the value of a REPL variable as the final answer.
+    
+    Example: FINAL_VAR(var_name="result")
+    """
     var_name: str
 
 
-Action = Union[PyAction, CallSubmodelAction, FinalAction, FinalVarAction]
+# Union type for all possible actions
+Action = Union[PyAction, FinalAction, FinalVarAction]
 
 
 def parse_action(text: str) -> Action | None:
-    """Parse text into one of the four action types.
+    """Parse text into one of the three action types.
+    
+    The parser attempts to match actions in this priority order:
+    1. FINAL_VAR(var_name="...") - Most specific pattern
+    2. PY(\"\"\"...\"\"\") - Triple-quoted string
+    3. FINAL(\"\"\"...\"\"\") - Triple-quoted string
     
     Args:
-        text: The text output from the model to parse
+        text: The text to parse (typically model output)
         
     Returns:
-        An Action object if a valid action is found, None otherwise
+        An Action instance if parsing succeeds, None otherwise.
         
     Examples:
-        >>> parse_action('PY("""print("hello")""")')
-        PyAction(code='print("hello")')
+        >>> parse_action('PY(\"\"\"x = 1 + 1\"\"\")')
+        PyAction(code='x = 1 + 1')
         
-        >>> parse_action('CALL_SUBMODEL(query="What is X?", context_var="doc")')
-        CallSubmodelAction(query='What is X?', context_var='doc')
-        
-        >>> parse_action('FINAL("""42""")')
-        FinalAction(answer='42')
+        >>> parse_action('FINAL(\"\"\"The answer is 42\"\"\")')
+        FinalAction(answer='The answer is 42')
         
         >>> parse_action('FINAL_VAR(var_name="result")')
         FinalVarAction(var_name='result')
     """
-    # Try to match PY("""...""")
+    if not text or not isinstance(text, str):
+        return None
+    
+    # Try FINAL_VAR first (most specific pattern)
+    final_var_match = re.search(r'FINAL_VAR\(var_name=["\']([^"\']+)["\']\)', text)
+    if final_var_match:
+        return FinalVarAction(var_name=final_var_match.group(1))
+    
+    # Try PY with triple quotes
     py_match = re.search(r'PY\("""(.*?)"""\)', text, re.DOTALL)
     if py_match:
         return PyAction(code=py_match.group(1))
     
-    # Try to match CALL_SUBMODEL(query="...", context_var="...")
-    # Handle both """ and " quotes for query
-    submodel_match = re.search(
-        r'CALL_SUBMODEL\(query="""(.*?)""",\s*context_var="(.*?)"\)',
-        text, re.DOTALL
-    )
-    if submodel_match:
-        return CallSubmodelAction(
-            query=submodel_match.group(1),
-            context_var=submodel_match.group(2)
-        )
-    
-    # Try alternate format with single quotes for query
-    submodel_match = re.search(
-        r'CALL_SUBMODEL\(query="(.*?)",\s*context_var="(.*?)"\)',
-        text, re.DOTALL
-    )
-    if submodel_match:
-        return CallSubmodelAction(
-            query=submodel_match.group(1),
-            context_var=submodel_match.group(2)
-        )
-    
-    # Try to match FINAL_VAR(var_name="...")
-    final_var_match = re.search(r'FINAL_VAR\(var_name="(.*?)"\)', text)
-    if final_var_match:
-        return FinalVarAction(var_name=final_var_match.group(1))
-    
-    # Try to match FINAL("""...""")
+    # Try FINAL with triple quotes
     final_match = re.search(r'FINAL\("""(.*?)"""\)', text, re.DOTALL)
     if final_match:
         return FinalAction(answer=final_match.group(1))
     
     return None
+
+
+def format_action(action: Action) -> str:
+    """Format an Action object back into its string representation.
+    
+    This is useful for generating training data or debugging.
+    
+    Args:
+        action: An Action instance
+        
+    Returns:
+        The formatted action string
+        
+    Examples:
+        >>> format_action(PyAction(code="x = 1"))
+        'PY(\"\"\"x = 1\"\"\")'
+    """
+    if isinstance(action, PyAction):
+        return f'PY("""{action.code}""")'
+    elif isinstance(action, FinalAction):
+        return f'FINAL("""{action.answer}""")'
+    elif isinstance(action, FinalVarAction):
+        return f'FINAL_VAR(var_name="{action.var_name}")'
+    else:
+        raise ValueError(f"Unknown action type: {type(action)}")
